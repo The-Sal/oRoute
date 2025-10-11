@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 oRoute - Optimised Routing Client. Automatic routing from tailscale to local network if available.
 Supports SSH for now.
