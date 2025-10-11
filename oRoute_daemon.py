@@ -1,10 +1,12 @@
 """
-OSSH - Optimised SSH. Automatic routing from tailscale to local network if available.
+oRoute - Optimised Routing Daemon. Automatic routing from tailscale to local network if available.
 """
 import os
 import json
 import uuid
 from utils3.networking.sockets import Server
+
+CLIENT_VERSION = 0.2
 
 
 class FastPathServer:
@@ -37,11 +39,13 @@ class FastPathServer:
         os.system("""ifconfig | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
         with open("local_ip.txt", "r") as f:
             ips = f.read().splitlines()
+        os.remove("local_ip.txt")
         return ips
 
 
 
 if __name__ == '__main__':
     server = FastPathServer()
+    print('Starting oRoute daemon... Version:', CLIENT_VERSION)
     server.server.start()
 
