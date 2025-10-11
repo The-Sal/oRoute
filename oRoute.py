@@ -83,7 +83,7 @@ def main():
             os.system(f'ssh {user}@{local_ip}')
         else:
             print(f'Connecting via Tailscale IP {hostname}...')
-            os.system(f'ssh {user}@{hostname}')
+            os.system(f'ssh {args.host}')
     else:
         print(f'Service {args.service} not supported yet.')
 
