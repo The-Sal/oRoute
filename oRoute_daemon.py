@@ -3,11 +3,13 @@
 oRoute - Optimised Routing Daemon. Automatic routing from tailscale to local network if available.
 """
 import os
+import subprocess
+import sys
 import json
 import uuid
 from utils3.networking.sockets import Server
 
-CLIENT_VERSION = 0.3
+CLIENT_VERSION = 0.4
 
 
 class FastPathServer:
@@ -44,9 +46,16 @@ class FastPathServer:
         return ips
 
 
-
-if __name__ == '__main__':
+def main():
     server = FastPathServer()
     print('Starting oRoute daemon... Version:', CLIENT_VERSION)
     server.server.start()
+
+if __name__ == '__main__':
+    if '--screen' in sys.argv:
+        print('Running in screen mode...')
+        subprocess.Popen(['screen', '-dmS', 'oRoute_daemon', sys.executable, __file__])
+        print('oRoute daemon started in detached screen session named "oRoute_daemon".')
+        sys.exit(0)
+    main()
 
