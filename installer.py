@@ -35,5 +35,14 @@ os.system('sudo chmod +x {}'.format(daemon_path))
 
 print('Installation complete.')
 
+print('Cleaning up...')
+print('Deleting installer scripts...')
+root_dir = os.path.dirname(__file__)
+remove_confirm = input('Do you want to delete {} (y/n)? '.format(root_dir))
+if remove_confirm.lower() == 'y':
+    os.system('sudo rm -rf {}'.format(root_dir))
+    print('Installer scripts deleted.')
+
+
 if __name__ == '__main__':
     pass
