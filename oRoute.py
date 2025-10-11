@@ -8,12 +8,14 @@ just need shit to work
 """
 
 
-CLIENT_VERSION = 0.2
+CLIENT_VERSION = 0.3
 
 import os
 import json
 import socket
 import argparse
+
+
 
 class FastPathClient:
     def __init__(self, host, port=9800):
@@ -22,6 +24,7 @@ class FastPathClient:
 
     def send_request(self, request_type: str):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(5)
             s.connect((self.host, self.port))
             s.sendall(request_type.encode('utf-8'))
             response = s.recv(4096)

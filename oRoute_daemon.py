@@ -3,13 +3,13 @@
 oRoute - Optimised Routing Daemon. Automatic routing from tailscale to local network if available.
 """
 import os
-import subprocess
 import sys
 import json
 import uuid
+import subprocess
 from utils3.networking.sockets import Server
 
-CLIENT_VERSION = 0.4
+CLIENT_VERSION = 0.6
 
 
 class FastPathServer:
@@ -37,11 +37,20 @@ class FastPathServer:
             client.sendall(b'INVALID_REQUEST')
             client.close()
 
-
     @staticmethod
-    def get_local_ip() -> list[str]:
+    def if_config_path():
+        possible = [
+            '/sbin/ifconfig',
+            '/usr/sbin/ifconfig',
+        ]
+        for p in possible:
+            if os.path.isfile(p):
+                return p
+        raise FileNotFoundError('ifconfig not found in standard locations.')
+
+    def get_local_ip(self) -> list[str]:
         """Get the local IP address of the server."""
-        os.system("""ifconfig | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
+        os.system(self.if_config_path() + """ | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
         with open("local_ip.txt", "r") as f:
             ips = f.read().splitlines()
         os.remove("local_ip.txt")
