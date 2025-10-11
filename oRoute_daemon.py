@@ -7,7 +7,7 @@ import json
 import uuid
 from utils3.networking.sockets import Server
 
-CLIENT_VERSION = 0.2
+CLIENT_VERSION = 0.3
 
 
 class FastPathServer:

@@ -8,7 +8,7 @@ just need shit to work
 """
 
 
-CLIENT_VERSION = 0.1
+CLIENT_VERSION = 0.2
 
 import os
 import json
