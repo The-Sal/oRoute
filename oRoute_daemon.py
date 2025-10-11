@@ -26,6 +26,8 @@ class FastPathServer:
     def on_recv(self, client, address, data):
         print(f"Received data from {address}: {data}")
         if data == b'GET_LOCAL_IP':
+            if not self.local_ip:
+                self.local_ip = self.get_local_ip()
             client.sendall(json.dumps(self.local_ip).encode('utf-8'))
             client.close()
         elif data == b'GET_SERVER_ID':
