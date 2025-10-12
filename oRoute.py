@@ -129,6 +129,9 @@ def help_msg():
     print('Available services:')
     print('  ssh     - Optimised SSH connection (default)')
     print('  search  - Search for oRoute servers on the local network')
+    print('  help    - Show this help message')
+    print('  update  - Update oRoute to the latest version from GitHub')
+
 
 def update():
     print('Updating oRoute (suite)...')
@@ -155,6 +158,10 @@ def main():
     elif args.service == 'search':
         print('Searching for oRoute servers on the local network...')
         search_for_servers()
+    elif args.service == 'help':
+        help_msg()
+    elif args.service == 'update':
+        update()
     else:
         print(f'Service {args.service} not supported yet.')
 
