@@ -7,7 +7,7 @@ Because sometimes Tailscale routing is not the fastest i.e. USB-SSH, VMs, etc...
 just need shit to work
 """
 
-CLIENT_VERSION = 2.8
+CLIENT_VERSION = 2.9
 
 import os
 import sys
@@ -130,7 +130,7 @@ def help_msg():
     print('  ssh        - Optimised SSH connection (default)')
     print('  rsync      - Optimised rsync (SSH or rsync:// daemon)')
     print('  search     - Search for oRoute servers on the local network')
-    print('  resolution - Output JSON with tailscale/local addresses, reachability, and server UUID')
+    print('  resolve - Output JSON with tailscale/local addresses, reachability, and server UUID')
     print('  update     - Update oRoute to the latest version from GitHub')
     print('  help       - Show this help message')
     print("\nrsync usage examples:")
@@ -206,7 +206,7 @@ def _inject_host_if_missing_in_rsync_endpoint(endpoint: str, host: str) -> str:
 
 
 def resolve_connectivity(hostname: str, port: int = 9800, timeout: float = 5.0) -> dict:
-    """Return a JSON-serializable dict describing connectivity resolution.
+    """Return a JSON-serializable dict describing connectivity resolve.
     Fields:
       - tailscale_address: the provided Tailscale address/hostname
       - local_address: discovered reachable local IP if any, else None
@@ -295,8 +295,8 @@ def main():
     elif args.service == 'search':
         print('Searching for oRoute servers on the local network...')
         search_for_servers()
-    elif args.service == 'resolution':
-        # Output a single JSON line with resolution info
+    elif args.service == 'resolve':
+        # Output a single JSON line with resolve info
         _, hostname = parse_ssh(args.host)
         result = resolve_connectivity(hostname, args.port)
         print(json.dumps(result))
@@ -304,8 +304,11 @@ def main():
         help_msg()
     elif args.service == 'update':
         update()
+    elif args.service == 'version':
+        print(f'oRoute Client version {CLIENT_VERSION}')
     else:
         print(f'Service {args.service} not supported yet.')
+        exit(2)
 
 
 if __name__ == '__main__':
