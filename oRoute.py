@@ -10,6 +10,7 @@ just need shit to work
 CLIENT_VERSION = 2.7
 
 import os
+import sys
 import json
 import socket
 import argparse
@@ -72,7 +73,6 @@ def parse_ssh(host):
         hostname = host
     return user, hostname
 
-
 def search_for_servers():
     os.system("""ifconfig | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
     with open("local_ip.txt", "r") as f:
@@ -124,14 +124,15 @@ def search_for_servers():
             if server[0] not in server[2]:
                 print('\t\tNote: The following server is lying about its local IP {} !=  {}'.format(server[0], server[2]))
 
-
-
 def help_msg():
     print('oRoute Client Help')
     print('Available services:')
     print('  ssh     - Optimised SSH connection (default)')
     print('  search  - Search for oRoute servers on the local network')
 
+def update():
+    print('Updating oRoute (suite)...')
+    os.system('gh repo clone The-Sal/oRoute; {} ./oRoute/installer.py'.format(sys.executable))
 
 def main():
     print('oRoute Client - Version:', CLIENT_VERSION)
