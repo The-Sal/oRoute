@@ -120,6 +120,8 @@ def search_for_servers():
             except socket.herror:
                 pass
             print(msg)
+            print('  To connect via local network, use: {}'.format(server[0]))
+
 
 def help_msg():
     print('oRoute Client Help')
