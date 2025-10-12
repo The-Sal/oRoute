@@ -7,7 +7,7 @@ Because sometimes Tailscale routing is not the fastest i.e. USB-SSH, VMs, etc...
 just need shit to work
 """
 
-CLIENT_VERSION = 2.5
+CLIENT_VERSION = 2.7
 
 import os
 import json
@@ -113,14 +113,17 @@ def search_for_servers():
     if found_servers:
         print('Found oRoute servers:')
         for server in found_servers:
-            msg = f'  IP: {server[0]}, ID: {server[1]}, Local IPs: {server[2]}'
+            msg = f'\tIP: {server[0]}, ID: {server[1]}, Local IPs: {server[2]}'
             try:
                 hostname = socket.gethostbyaddr(server[0])[0]
                 msg += f', Hostname: {hostname}'
             except socket.herror:
                 pass
             print(msg)
-            print('  To connect via local network, use: {}'.format(server[0]))
+            print('\t\tTo connect via local network, use: {}'.format(server[0]))
+            if server[0] not in server[2]:
+                print('\t\tNote: The following server is lying about its local IP {} !=  {}'.format(server[0], server[2]))
+
 
 
 def help_msg():
