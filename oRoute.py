@@ -7,7 +7,7 @@ Because sometimes Tailscale routing is not the fastest i.e. USB-SSH, VMs, etc...
 just need shit to work
 """
 
-CLIENT_VERSION = 2.7
+CLIENT_VERSION = 2.8
 
 import os
 import sys
@@ -127,17 +127,18 @@ def search_for_servers():
 def help_msg():
     print('oRoute Client Help')
     print('Available services:')
-    print('  ssh     - Optimised SSH connection (default)')
-    print('  rsync   - Optimised rsync (SSH or rsync:// daemon)')
-    print('  search  - Search for oRoute servers on the local network')
-    print('  help    - Show this help message')
+    print('  ssh        - Optimised SSH connection (default)')
+    print('  rsync      - Optimised rsync (SSH or rsync:// daemon)')
+    print('  search     - Search for oRoute servers on the local network')
+    print('  resolution - Output JSON with tailscale/local addresses, reachability, and server UUID')
+    print('  update     - Update oRoute to the latest version from GitHub')
+    print('  help       - Show this help message')
     print("\nrsync usage examples:")
     print("  oRoute.py <tailscale-host> --service rsync --src ./local/dir --dst user@<tailscale-host>:/remote/dir")
     print("  oRoute.py <tailscale-host> --service rsync --src rsync://<tailscale-host>/module/path --dst ./local/dir")
     print("  You can omit the host in rsync daemon URLs using rsync:///module/path. oRoute will inject the <tailscale-host>\n    and, if a local IP fast path is found, it will inject the discovered local IP instead.")
     print("  Example: oRoute.py 100.65.205.20 -s rsync --src . --dst rsync:///Argus")
     print("  Add custom args with --rsync-args (default: -av --exclude='.venv' --progress --stats)")
-    print('  update  - Update oRoute to the latest version from GitHub')
 
 
 def update():
@@ -204,13 +205,51 @@ def _inject_host_if_missing_in_rsync_endpoint(endpoint: str, host: str) -> str:
     return endpoint
 
 
+def resolve_connectivity(hostname: str, port: int = 9800, timeout: float = 5.0) -> dict:
+    """Return a JSON-serializable dict describing connectivity resolution.
+    Fields:
+      - tailscale_address: the provided Tailscale address/hostname
+      - local_address: discovered reachable local IP if any, else None
+      - reachable: True if a local address was verified reachable (server UUID match)
+      - server_uuid: UUID reported by the server (or None if unreachable)
+    This function is quiet (no prints) and performs minimal probing.
+    """
+    server_uuid = None
+    local_address = None
+    reachable = False
+    try:
+        client = FastPathClient(hostname, port, timeout=timeout)
+        local_ips = client.send_request('GET_LOCAL_IP')
+        server_uuid = client.send_request('GET_SERVER_ID')
+        # Ensure local_ips is iterable
+        if isinstance(local_ips, (list, tuple)):
+            for ip in local_ips:
+                try:
+                    lc = FastPathClient(ip, port, timeout=timeout)
+                    sid = lc.send_request('GET_SERVER_ID')
+                    if sid == server_uuid:
+                        local_address = ip
+                        reachable = True
+                        break
+                except socket.error:
+                    continue
+    except socket.error:
+        # Could not reach tailscale host; keep defaults
+        pass
+    return {
+        'tailscale_address': hostname,
+        'local_address': local_address,
+        'reachable': reachable,
+        'server_uuid': server_uuid,
+    }
+
+
 def main():
-    print('oRoute Client - Version:', CLIENT_VERSION)
     parser = argparse.ArgumentParser(description='oRoute Client - Automatic routing from Tailscale to local network if available.')
     parser.add_argument('host', type=str, help='The Tailscale IP address of the server')
     parser.add_argument('--port', type=int, default=9800, help='The port number of the server (default: 9800)')
     parser.add_argument('-s', '--service', default='ssh', type=str,
-                        help='The service to use the fastest path for (default: ssh)')
+                        help='The service to use the fastest path for (default: ssh) use -s help for more info',)
     # rsync specific args
     parser.add_argument('--src', type=str, help="rsync source path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
     parser.add_argument('--dst', type=str, help="rsync destination path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
@@ -256,6 +295,11 @@ def main():
     elif args.service == 'search':
         print('Searching for oRoute servers on the local network...')
         search_for_servers()
+    elif args.service == 'resolution':
+        # Output a single JSON line with resolution info
+        _, hostname = parse_ssh(args.host)
+        result = resolve_connectivity(hostname, args.port)
+        print(json.dumps(result))
     elif args.service == 'help':
         help_msg()
     elif args.service == 'update':
