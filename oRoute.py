@@ -128,14 +128,81 @@ def help_msg():
     print('oRoute Client Help')
     print('Available services:')
     print('  ssh     - Optimised SSH connection (default)')
+    print('  rsync   - Optimised rsync (SSH or rsync:// daemon)')
     print('  search  - Search for oRoute servers on the local network')
     print('  help    - Show this help message')
+    print("\nrsync usage examples:")
+    print("  oRoute.py <tailscale-host> --service rsync --src ./local/dir --dst user@<tailscale-host>:/remote/dir")
+    print("  oRoute.py <tailscale-host> --service rsync --src rsync://<tailscale-host>/module/path --dst ./local/dir")
+    print("  You can omit the host in rsync daemon URLs using rsync:///module/path. oRoute will inject the <tailscale-host>\n    and, if a local IP fast path is found, it will inject the discovered local IP instead.")
+    print("  Example: oRoute.py 100.65.205.20 -s rsync --src . --dst rsync:///Argus")
+    print("  Add custom args with --rsync-args (default: -av --exclude='.venv' --progress --stats)")
     print('  update  - Update oRoute to the latest version from GitHub')
 
 
 def update():
     print('Updating oRoute (suite)...')
     os.system('gh repo clone The-Sal/oRoute; {} ./oRoute/installer.py'.format(sys.executable))
+
+def _replace_host_in_rsync_endpoint(endpoint: str, original_host: str, new_host: str) -> str:
+    """Replace the hostname part in an rsync endpoint with a new host.
+    Supports:
+      - SSH form: [user@]host:path
+      - Daemon form: rsync://host[:port]/module/path
+    Leaves local paths untouched.
+    """
+    if not endpoint:
+        return endpoint
+
+    # rsync daemon URL
+    if endpoint.startswith('rsync://'):
+        rest = endpoint[len('rsync://'):]  # host[:port]/...
+        # Split host[:port] and remainder
+        if '/' in rest:
+            hostport, tail = rest.split('/', 1)
+        else:
+            hostport, tail = rest, ''
+        # If the original host is present as hostname in hostport, replace it (preserve :port if any)
+        # hostport may be host or host:port
+        if hostport.startswith(original_host):
+            suffix = hostport[len(original_host):]
+            hostport = new_host + suffix
+        else:
+            # If not a simple startswith, try to replace hostname before optional :port precisely
+            parts = hostport.split(':', 1)
+            if parts[0] == original_host:
+                hostport = new_host + (':' + parts[1] if len(parts) == 2 else '')
+        return 'rsync://' + hostport + ('/' + tail if tail else '')
+
+    # SSH-like remote path [user@]host:path (note: beware Windows paths with colon, but assume POSIX)
+    if ':' in endpoint and not endpoint.startswith('/'):
+        left, right = endpoint.split(':', 1)
+        # left can be host or user@host
+        if '@' in left:
+            user, host = left.rsplit('@', 1)
+            if host == original_host:
+                left = f"{user}@{new_host}"
+        else:
+            if left == original_host:
+                left = new_host
+        return f"{left}:{right}"
+
+    # Local path, return as-is
+    return endpoint
+
+
+def _inject_host_if_missing_in_rsync_endpoint(endpoint: str, host: str) -> str:
+    """If endpoint is an rsync daemon URL missing host (rsync:///...), inject the given host.
+    Otherwise return endpoint unchanged.
+    """
+    if not endpoint:
+        return endpoint
+    prefix = 'rsync:///'
+    if endpoint.startswith(prefix):
+        tail = endpoint[len(prefix):]
+        return f"rsync://{host}/{tail}"
+    return endpoint
+
 
 def main():
     print('oRoute Client - Version:', CLIENT_VERSION)
@@ -144,6 +211,12 @@ def main():
     parser.add_argument('--port', type=int, default=9800, help='The port number of the server (default: 9800)')
     parser.add_argument('-s', '--service', default='ssh', type=str,
                         help='The service to use the fastest path for (default: ssh)')
+    # rsync specific args
+    parser.add_argument('--src', type=str, help="rsync source path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
+    parser.add_argument('--dst', type=str, help="rsync destination path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
+    parser.add_argument('--rsync-args', dest='rsync_args', type=str,
+                        default="-av --exclude='.venv' --progress --stats",
+                        help="Arguments to pass to rsync. Default: -av --exclude='.venv' --progress --stats")
 
     args = parser.parse_args()
     if args.service == 'ssh':
@@ -155,6 +228,31 @@ def main():
         else:
             print(f'Connecting via Tailscale IP {hostname}...')
             os.system(f'ssh {args.host}')
+    elif args.service == 'rsync':
+        if not args.src or not args.dst:
+            print('Error: --src and --dst are required for rsync service.')
+            sys.exit(2)
+        # Determine if a local fast path is available
+        _, hostname = parse_ssh(args.host)
+        local_ip = check_for_local_connection(hostname, args.port)
+        src = args.src
+        dst = args.dst
+        if local_ip:
+            print(f'Using local IP for rsync: {local_ip}')
+            # Inject local IP if host is omitted in rsync daemon URLs
+            src = _inject_host_if_missing_in_rsync_endpoint(src, local_ip)
+            dst = _inject_host_if_missing_in_rsync_endpoint(dst, local_ip)
+            # If endpoints explicitly contain the Tailscale host, replace with local IP
+            src = _replace_host_in_rsync_endpoint(src, hostname, local_ip)
+            dst = _replace_host_in_rsync_endpoint(dst, hostname, local_ip)
+        else:
+            print(f'No local IP path found, using Tailscale host {hostname} for rsync')
+            # Inject the provided host if omitted in rsync daemon URLs
+            src = _inject_host_if_missing_in_rsync_endpoint(src, hostname)
+            dst = _inject_host_if_missing_in_rsync_endpoint(dst, hostname)
+        cmd = f"rsync {args.rsync_args} {src} {dst}"
+        print(f'Executing: {cmd}')
+        os.system(cmd)
     elif args.service == 'search':
         print('Searching for oRoute servers on the local network...')
         search_for_servers()
