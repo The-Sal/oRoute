@@ -244,8 +244,11 @@ class FastPathClient:
             response = s.recv(4096)
         try:
             decoded = response.decode('utf-8')
-            # Try to parse JSON if it’s IP list
-            return json.loads(decoded)
+            listed_ips =  json.loads(decoded)
+            # drop all addresses in the 100.xx.x range (tailscale)
+            filtered = [ip for ip in listed_ips if not ip.startswith('100.')]
+            return filtered
+
         except json.JSONDecodeError:
             return decoded
 
@@ -443,6 +446,11 @@ def resolve_connectivity(hostname: str, port: int = 9800, timeout: float = 5.0) 
     try:
         client = FastPathClient(hostname, port, timeout=timeout)
         local_ips = client.send_request('GET_LOCAL_IP')
+
+        # remove the tailscale address from local_ips if present
+        if hostname in local_ips:
+            local_ips.remove(hostname)
+
         server_uuid = client.send_request('GET_SERVER_ID')
         # Ensure local_ips is iterable
         if isinstance(local_ips, (list, tuple)):
