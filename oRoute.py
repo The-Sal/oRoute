@@ -112,23 +112,22 @@ class SavedHostLayer:
         else:
             print(f"[oRoute] SavedHost: host '{host}' not found")
 
-    def set_alias(self, alias: str, user: str, address: str = None):
+    def set_alias(self, alias, user, address=None):
         """Create/update an alias that independently maps to (user, address).
         If address is None, will try to use saved hosts[user].
         """
         if not user:
-            print(f"[oRoute] SavedHost: cannot set alias '{alias}' without a username")
+            print("[oRoute] SavedHost: cannot set alias '{}' without a username".format(alias))
             return
         if address is None:
             address = self.hosts.get(user)
             if not address:
-                print(f"[oRoute] SavedHost: no address provided and no saved host for '{user}'")
+                print("[oRoute] SavedHost: no address provided and no saved host for '{}'".format(user))
                 return
         prev = self.aliases.get(alias)
         self.aliases[alias] = {"user": user, "address": address}
         self.save()
         if prev and prev != self.aliases[alias]:
-            # Summarize previous target
             if isinstance(prev, dict):
                 prev_desc = f"{prev.get('user','?')}@{prev.get('address','?')}"
             else:
@@ -177,7 +176,7 @@ class SavedHostLayer:
         h, a = self.resolve_name(name)
         return bool(h and a)
 
-    def record_host(self, user: str, address: str):
+    def record_host(self, user, address):
         """Record mapping user -> tailscale address. If changed, notify.
         """
         if not user or not address:
@@ -231,7 +230,7 @@ class SavedHostLayer:
 
 
 class FastPathClient:
-    def __init__(self, host, port=9800, timeout=5):
+    def __init__(self, host, port=9800, timeout: float =5):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -248,9 +247,8 @@ class FastPathClient:
             # drop all addresses in the 100.xx.x range (tailscale)
             filtered = [ip for ip in listed_ips if not ip.startswith('100.')]
             return filtered
-
         except json.JSONDecodeError:
-            return decoded
+            return []
 
 def check_for_local_connection(host, port=9800):
     print('Connecting via {}:{}'.format(host, port))
@@ -371,11 +369,11 @@ def update():
     print('Updating oRoute (suite)...')
     os.system('gh repo clone The-Sal/oRoute; {} ./oRoute/installer.py'.format(sys.executable))
 
-def _replace_host_in_rsync_endpoint(endpoint: str, original_host: str, new_host: str) -> str:
+def _replace_host_in_rsync_endpoint(endpoint, original_host, new_host):
     """Replace the hostname part in an rsync endpoint with a new host.
     Supports:
-      - SSH form: [user@]host:path
-      - Daemon form: rsync://host[:port]/module/path
+    - SSH form: [user@]host:path
+    - Daemon form: rsync://host[:port]/module/path
     Leaves local paths untouched.
     """
     if not endpoint:
@@ -383,28 +381,22 @@ def _replace_host_in_rsync_endpoint(endpoint: str, original_host: str, new_host:
 
     # rsync daemon URL
     if endpoint.startswith('rsync://'):
-        rest = endpoint[len('rsync://'):]  # host[:port]/...
-        # Split host[:port] and remainder
+        rest = endpoint[len('rsync://'):]
         if '/' in rest:
             hostport, tail = rest.split('/', 1)
         else:
             hostport, tail = rest, ''
-        # If the original host is present as hostname in hostport, replace it (preserve :port if any)
-        # hostport may be host or host:port
         if hostport.startswith(original_host):
             suffix = hostport[len(original_host):]
             hostport = new_host + suffix
         else:
-            # If not a simple startswith, try to replace hostname before optional :port precisely
             parts = hostport.split(':', 1)
             if parts[0] == original_host:
                 hostport = new_host + (':' + parts[1] if len(parts) == 2 else '')
         return 'rsync://' + hostport + ('/' + tail if tail else '')
 
-    # SSH-like remote path [user@]host:path (note: beware Windows paths with colon, but assume POSIX)
     if ':' in endpoint and not endpoint.startswith('/'):
         left, right = endpoint.split(':', 1)
-        # left can be host or user@host
         if '@' in left:
             user, host = left.rsplit('@', 1)
             if host == original_host:
@@ -414,65 +406,76 @@ def _replace_host_in_rsync_endpoint(endpoint: str, original_host: str, new_host:
                 left = new_host
         return f"{left}:{right}"
 
-    # Local path, return as-is
     return endpoint
 
 
-def _inject_host_if_missing_in_rsync_endpoint(endpoint: str, host: str) -> str:
-    """If endpoint is an rsync daemon URL missing host (rsync:///...), inject the given host.
-    Otherwise return endpoint unchanged.
-    """
-    if not endpoint:
+def _inject_host_if_missing_in_rsync_endpoint(endpoint, host):
+        """If endpoint is an rsync daemon URL missing host (rsync:///...), inject the given host.
+        Otherwise return endpoint unchanged.
+        """
+        if not endpoint:
+            return endpoint
+        prefix = 'rsync:///'
+        if endpoint.startswith(prefix):
+            tail = endpoint[len(prefix):]
+            return f"rsync://{host}/{tail}"
         return endpoint
-    prefix = 'rsync:///'
-    if endpoint.startswith(prefix):
-        tail = endpoint[len(prefix):]
-        return f"rsync://{host}/{tail}"
+
+
+# NOTE: added custom host:// scheme handling for rsync
+
+def _inject_host_from_scheme(endpoint, resolved_user, resolved_hostname):
+    """Transform endpoint using host:// scheme into SSH-style path.
+    Example: host://remote/path -> "{user}@{ip}:remote/path"
+    If endpoint does not start with 'host://', returns unchanged.
+    """
+    if not endpoint or not endpoint.startswith('host://'):
+        return endpoint
+    rest = endpoint[len('host://'):]
+    return f"{resolved_user}@{resolved_hostname}:{rest}"
+    # Skip rsync:// scheme handled elsewhere
+    if endpoint.startswith('rsync://'):
+        return endpoint
+    if '://' in endpoint:
+        scheme, rest = endpoint.split('://', 1)
+        # Use specified host and user
+        return f"{user}@{host}:{rest}"
     return endpoint
 
 
-def resolve_connectivity(hostname: str, port: int = 9800, timeout: float = 5.0) -> dict:
-    """Return a JSON-serializable dict describing connectivity resolve.
-    Fields:
-      - tailscale_address: the provided Tailscale address/hostname
-      - local_address: discovered reachable local IP if any, else None
-      - reachable: True if a local address was verified reachable (server UUID match)
-      - server_uuid: UUID reported by the server (or None if unreachable)
-    This function is quiet (no prints) and performs minimal probing.
-    """
-    server_uuid = None
-    local_address = None
-    reachable = False
-    try:
-        client = FastPathClient(hostname, port, timeout=timeout)
-        local_ips = client.send_request('GET_LOCAL_IP')
-
-        # remove the tailscale address from local_ips if present
-        if hostname in local_ips:
-            local_ips.remove(hostname)
-
-        server_uuid = client.send_request('GET_SERVER_ID')
-        # Ensure local_ips is iterable
-        if isinstance(local_ips, (list, tuple)):
-            for ip in local_ips:
-                try:
-                    lc = FastPathClient(ip, port, timeout=timeout)
-                    sid = lc.send_request('GET_SERVER_ID')
-                    if sid == server_uuid:
-                        local_address = ip
-                        reachable = True
-                        break
-                except socket.error:
-                    continue
-    except socket.error:
-        # Could not reach tailscale host; keep defaults
-        pass
-    return {
-        'tailscale_address': hostname,
-        'local_address': local_address,
-        'reachable': reachable,
-        'server_uuid': server_uuid,
-    }
+def resolve_connectivity(hostname, port=9800, timeout=5.0):
+        """Return a JSON-serializable dict describing connectivity resolve.
+        Fields:
+        - tailscale_address: the provided Tailscale address/hostname
+        - local_address: discovered reachable local IP if any, else None
+        - reachable: True if a local address was verified reachable (server UUID match)
+        - server_uuid: UUID reported by the server (or None if unreachable)
+        """
+        if not hostname:
+            return {'tailscale_address': None, 'local_address': None, 'reachable': False, 'server_uuid': None}
+        server_uuid = None
+        local_address = None
+        reachable = False
+        try:
+            client = FastPathClient(hostname, port, timeout=timeout)
+            local_ips = client.send_request('GET_LOCAL_IP')
+            if hostname in local_ips:
+                local_ips.remove(hostname)
+            server_uuid = client.send_request('GET_SERVER_ID')
+            if isinstance(local_ips, (list, tuple)):
+                for ip in local_ips:
+                    try:
+                        lc = FastPathClient(ip, port, timeout=timeout)
+                        sid = lc.send_request('GET_SERVER_ID')
+                        if sid == server_uuid:
+                            local_address = ip
+                            reachable = True
+                            break
+                    except socket.error:
+                        continue
+        except socket.error:
+            pass
+        return {'tailscale_address': hostname, 'local_address': local_address, 'reachable': reachable, 'server_uuid': server_uuid}
 
 
 def main():
@@ -549,15 +552,14 @@ def main():
         dst = args.dst
         if local_ip:
             print(f'Using local IP for rsync: {local_ip}')
-            # Inject local IP if host is omitted in rsync daemon URLs
+            src = _inject_host_from_scheme(src, resolved_user, resolved_hostname)
+            dst = _inject_host_from_scheme(dst, resolved_user, resolved_hostname)
             src = _inject_host_if_missing_in_rsync_endpoint(src, local_ip)
             dst = _inject_host_if_missing_in_rsync_endpoint(dst, local_ip)
-            # If endpoints explicitly contain the Tailscale host, replace with local IP
             src = _replace_host_in_rsync_endpoint(src, hostname, local_ip)
             dst = _replace_host_in_rsync_endpoint(dst, hostname, local_ip)
         else:
             print(f'No local IP path found, using Tailscale host {hostname} for rsync')
-            # Inject the provided host if omitted in rsync daemon URLs
             src = _inject_host_if_missing_in_rsync_endpoint(src, hostname)
             dst = _inject_host_if_missing_in_rsync_endpoint(dst, hostname)
         cmd = f"rsync {args.rsync_args} {src} {dst}"
