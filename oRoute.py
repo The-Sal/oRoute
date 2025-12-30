@@ -7,7 +7,7 @@ Because sometimes Tailscale routing is not the fastest i.e. USB-SSH, VMs, etc...
 just need shit to work
 """
 
-CLIENT_VERSION = 3.0
+CLIENT_VERSION = 3.5
 
 import os
 import sys
@@ -129,7 +129,7 @@ class SavedHostLayer:
         self.save()
         if prev and prev != self.aliases[alias]:
             if isinstance(prev, dict):
-                prev_desc = f"{prev.get('user','?')}@{prev.get('address','?')}"
+                prev_desc = f"{prev.get('user', '?')}@{prev.get('address', '?')}"
             else:
                 prev_desc = f"{prev}@{self.hosts.get(str(prev), '?')}"
             print(f"[oRoute] SavedHost: alias '{alias}' retargeted {prev_desc} -> {user}@{address}")
@@ -230,7 +230,7 @@ class SavedHostLayer:
 
 
 class FastPathClient:
-    def __init__(self, host, port=9800, timeout: float =5):
+    def __init__(self, host, port=9800, timeout: float = 5):
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -241,14 +241,17 @@ class FastPathClient:
             s.connect((self.host, self.port))
             s.sendall(request_type.encode('utf-8'))
             response = s.recv(4096)
+        if request_type == 'GET_SERVER_ID':
+            return response.decode('utf-8')
         try:
             decoded = response.decode('utf-8')
-            listed_ips =  json.loads(decoded)
+            listed_ips = json.loads(decoded)
             # drop all addresses in the 100.xx.x range (tailscale)
             filtered = [ip for ip in listed_ips if not ip.startswith('100.')]
             return filtered
         except json.JSONDecodeError:
             return []
+
 
 def check_for_local_connection(host, port=9800):
     print('Connecting via {}:{}'.format(host, port))
@@ -276,6 +279,7 @@ def check_for_local_connection(host, port=9800):
 
     return False
 
+
 def parse_ssh(host):
     """Parses a username@hostname string into its components."""
     if '@' in host:
@@ -285,8 +289,10 @@ def parse_ssh(host):
         hostname = host
     return user, hostname
 
+
 def search_for_servers():
-    os.system("""ifconfig | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
+    os.system(
+        """ifconfig | grep -E "([0-9]{1,3}\\.){3}[0-9]{1,3}" | grep -v 127.0.0.1 | awk '{ print $2 }' | cut -f2 -d: > local_ip.txt""")
     with open("local_ip.txt", "r") as f:
         ips = f.read().splitlines()
     os.remove("local_ip.txt")
@@ -334,7 +340,10 @@ def search_for_servers():
             print(msg)
             print('\t\tTo connect via local network, use: {}'.format(server[0]))
             if server[0] not in server[2]:
-                print('\t\tNote: The following server is lying about its local IP {} !=  {}'.format(server[0], server[2]))
+                print(
+                    '\t\tNote: The following server is lying about its local IP {} !=  {}'.format(server[0], server[2])
+                )
+
 
 def help_msg():
     print('oRoute Client Help')
@@ -368,6 +377,7 @@ def help_msg():
 def update():
     print('Updating oRoute (suite)...')
     os.system('gh repo clone The-Sal/oRoute; {} ./oRoute/installer.py'.format(sys.executable))
+
 
 def _replace_host_in_rsync_endpoint(endpoint, original_host, new_host):
     """Replace the hostname part in an rsync endpoint with a new host.
@@ -410,16 +420,16 @@ def _replace_host_in_rsync_endpoint(endpoint, original_host, new_host):
 
 
 def _inject_host_if_missing_in_rsync_endpoint(endpoint, host):
-        """If endpoint is an rsync daemon URL missing host (rsync:///...), inject the given host.
+    """If endpoint is an rsync daemon URL missing host (rsync:///...), inject the given host.
         Otherwise return endpoint unchanged.
         """
-        if not endpoint:
-            return endpoint
-        prefix = 'rsync:///'
-        if endpoint.startswith(prefix):
-            tail = endpoint[len(prefix):]
-            return f"rsync://{host}/{tail}"
+    if not endpoint:
         return endpoint
+    prefix = 'rsync:///'
+    if endpoint.startswith(prefix):
+        tail = endpoint[len(prefix):]
+        return f"rsync://{host}/{tail}"
+    return endpoint
 
 
 # NOTE: added custom host:// scheme handling for rsync
@@ -444,52 +454,58 @@ def _inject_host_from_scheme(endpoint, resolved_user, resolved_hostname):
 
 
 def resolve_connectivity(hostname, port=9800, timeout=5.0):
-        """Return a JSON-serializable dict describing connectivity resolve.
+    """Return a JSON-serializable dict describing connectivity resolve.
         Fields:
         - tailscale_address: the provided Tailscale address/hostname
         - local_address: discovered reachable local IP if any, else None
         - reachable: True if a local address was verified reachable (server UUID match)
         - server_uuid: UUID reported by the server (or None if unreachable)
         """
-        if not hostname:
-            return {'tailscale_address': None, 'local_address': None, 'reachable': False, 'server_uuid': None}
-        server_uuid = None
-        local_address = None
-        reachable = False
-        try:
-            client = FastPathClient(hostname, port, timeout=timeout)
-            local_ips = client.send_request('GET_LOCAL_IP')
-            if hostname in local_ips:
-                local_ips.remove(hostname)
-            server_uuid = client.send_request('GET_SERVER_ID')
-            if isinstance(local_ips, (list, tuple)):
-                for ip in local_ips:
-                    try:
-                        lc = FastPathClient(ip, port, timeout=timeout)
-                        sid = lc.send_request('GET_SERVER_ID')
-                        if sid == server_uuid:
-                            local_address = ip
-                            reachable = True
-                            break
-                    except socket.error:
-                        continue
-        except socket.error:
-            pass
-        return {'tailscale_address': hostname, 'local_address': local_address, 'reachable': reachable, 'server_uuid': server_uuid}
+    if not hostname:
+        return {'tailscale_address': None, 'local_address': None, 'reachable': False, 'server_uuid': None}
+    server_uuid = None
+    local_address = None
+    reachable = False
+    try:
+        client = FastPathClient(hostname, port, timeout=timeout)
+        local_ips = client.send_request('GET_LOCAL_IP')
+        if hostname in local_ips:
+            local_ips.remove(hostname)
+        server_uuid = client.send_request('GET_SERVER_ID')
+        if isinstance(local_ips, (list, tuple)):
+            for ip in local_ips:
+                try:
+                    lc = FastPathClient(ip, port, timeout=timeout)
+                    sid = lc.send_request('GET_SERVER_ID')
+                    if sid == server_uuid:
+                        local_address = ip
+                        reachable = True
+                        break
+                except socket.error:
+                    continue
+    except socket.error:
+        pass
+    return {'tailscale_address': hostname, 'local_address': local_address, 'reachable': reachable,
+            'server_uuid': server_uuid}
 
 
 def main():
-    parser = argparse.ArgumentParser(description='oRoute Client - Automatic routing from Tailscale to local network if available.')
-    parser.add_argument('host', type=str, nargs='?', help='Tailscale host/IP (or saved username / alias). For SSH you can also pass user@tailscale to auto-save this mapping.')
+    parser = argparse.ArgumentParser(
+        description='oRoute Client - Automatic routing from Tailscale to local network if available.')
+    parser.add_argument('host', type=str, nargs='?',
+                        help='Tailscale host/IP (or saved username / alias). For SSH you can also pass user@tailscale to auto-save this mapping.')
     parser.add_argument('--port', type=int, default=9800, help='The port number of the server (default: 9800)')
     parser.add_argument('-s', '--service', default='ssh', type=str,
                         help='The service to use the fastest path for (default: ssh). Use --service help for more info.')
     # SavedHostLayer helpers
-    parser.add_argument('--saved-host-cli', action='store_true', help='Open the Saved Host interactive manager (add/remove hosts and aliases).')
+    parser.add_argument('--saved-host-cli', action='store_true',
+                        help='Open the Saved Host interactive manager (add/remove hosts and aliases).')
     parser.add_argument('--list-saved-hosts', action='store_true', help='List saved hosts and aliases and exit.')
     # rsync specific args
-    parser.add_argument('--src', type=str, help="rsync source path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
-    parser.add_argument('--dst', type=str, help="rsync destination path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
+    parser.add_argument('--src', type=str,
+                        help="rsync source path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
+    parser.add_argument('--dst', type=str,
+                        help="rsync destination path (local or remote). For rsync daemon URLs you can omit the host using rsync:///module/path; oRoute will inject the <host> you pass as the first argument (or a discovered local IP).")
     parser.add_argument('--rsync-args', dest='rsync_args', type=str,
                         default="-av --exclude='.venv' --progress --stats",
                         help="Arguments to pass to rsync. Default: -av --exclude='.venv' --progress --stats")
@@ -508,7 +524,8 @@ def main():
     # Some services don't require a host
     services_no_host = {'help', 'search', 'update', 'version'}
     if args.service not in services_no_host and not args.host:
-        print('Error: host argument is required unless using --service help/search/update/version or SavedHost CLI flags.')
+        print(
+            'Error: host argument is required unless using --service help/search/update/version or SavedHost CLI flags.')
         sys.exit(2)
 
     # Resolve host argument via SavedHostLayer
